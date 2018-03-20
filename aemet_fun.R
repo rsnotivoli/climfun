@@ -23,15 +23,16 @@
       fechas <- format(seq.Date(from=as.Date(ini),to=as.Date(end),by="day"),"%Y-%m-%d")
       ids <- levels(as.factor(data[,idcol]))
       var <- as.data.frame(fechas)
+      mat <- matrix(NA, ncol = length(ids), nrow = length(fechas))
+      colnames(mat) <- ids
       for(j in 1:length(ids)){
         sub <- subset(data,data[,idcol]==ids[j]); sub <- sub[,c(yearcol,moncol,inidata:(inidata+30))]; colnames(sub)[3:33] <- 1:31
         lsub <- melt(sub, id.vars=c(1,2), variable_name='day', na.rm=TRUE); lsub$fechas <- format(as.Date(paste(lsub[,1],lsub[,2],lsub[,3],sep='-')),'%Y-%m-%d')
         lsub <- data.frame(lsub$fechas,lsub$value); names(lsub) <- c('fechas','value')
         kk <- merge(lsub,var,by='fechas',all=TRUE); kk <- kk[order(levels(as.factor(kk$fechas))),]
-        var <- cbind(var,kk[,2])
-        names(var)[j+1] <- as.character(ids[j])
+        mat[,j] <- kk[,2]
       }
-      return(var)  
+      return(mat)  
     }
 
 
