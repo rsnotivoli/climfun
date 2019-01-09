@@ -1,0 +1,126 @@
+#' Creates a multidimensional NetCDF from a data.frame
+#'
+#' This function creates a new NetCDF file from a data.frame where the columns are the grid points and the rows are the time steps (in days). Requires an additional data.frame with the grid points information.
+#' @param DF matrix or data.frame containing the values of the variable. Columns must be the grid points and rows the days.
+#' @param locations matrix or data.frame containing the grid points information. At least columns X and Y must be present. Grid points information must be ordered like the columns in DF.
+#' @param origcrs CRS of the locations object.
+#' @param outcrs output desired CRS.
+#' @param out name of the output file.
+#' @param varname name of the variable.
+#' @param varunit units of the variable.
+#' @param longname long name of the variable.
+#' @param title title of the dataset (global attribute).
+#' @param history version history of the dataset (global attribute).
+#' @param keywords keywords of the dataset (global attribute).
+#' @param creator_name name of the creator of the dataset (global attribute).
+#' @param maintainer_name name of the maintainer of the dataset (global attribute).
+#' @param maintainer_email email of the maintainer of the dataset (global attribute).
+#' @param institution institution of the creator of the dataset (global attribute).
+#' @param processing_level level of process of the data values of the dataset (global attribute).
+#' @param acknowledgment acknowledgments (global attribute).
+#' @param units long name of the units of the variable (global attribute).
+#' @param id identification name of the dataset (global attribute).
+#' @param naming_authority naming authority of the dataset (global attribute).
+#' @param sources source(s) of the data values of the dataset (global attribute).
+#' @keywords netcdf, daily, multidimensional
+#' @details Only works with one variable per netcdf.
+#' @examples 
+#' 
+#' # DFtoNC(DF = tmax,
+#' # locations = points, 
+#' # origcrs = CRS("+proj=utm +zone=30 +ellps=GRS80 +units=m +no_defs"),
+#' # outcrs = CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"),
+#' # out = "newdataset_tmax.nc", 
+#' # varname = "tmax", 
+#' # varunit = 'ºC',
+#' # longname = 'Maximum temperature',
+#' # inidate = '1981-01-01',
+#' # title = 'Daily maximum temperature',
+#' # history = 'version 1.0',
+#' # keywords = "daily, temperature",
+#' # creator_name = "First name, Last name",
+#' # maintainer_name = "First name, Last name",
+#' # maintainer_email = "name(at)university.net",
+#' # institution = "My institution",
+#' # processing_level = "level of processing",
+#' # acknowledgment = "My acknowledgments",
+#' # units = "celsius degrees",
+#' # id = 'DATASET',
+#' # naming_authority = "DATA SET at daily scale",
+#' # sources = 'National and regional meteorological services'
+#' # )
+#' 
+#' @export 
+
+library(raster)
+library(ncdf4)
+library(easyNCDF)
+
+
+DFtoNC <- function(DF, locations, origcrs, outcrs, out, varname, varunit, 
+                   longname, inidate, title, history, keywords,
+                   creator_name, maintainer_name, maintainer_email,
+                   institution, processing_level, acknowledgment,
+                   units, id, naming_authority, sources) {
+  
+  xyz <- cbind(locations$X, locations$Y, DF[1,])
+  rstack <- rasterFromXYZ(xyz, crs = origcrs)
+  rstack <- projectRaster(rstack, crs = outcrs)
+  k <- as.matrix(rstack)
+  k <- t(k)
+  arr <- array(dim = c(nrow(k), ncol(k), nrow(DF)))
+  arr[,,1] <- k
+  print('Creating layers')
+  pb <- txtProgressBar(min = 0, max = nrow(DF), style = 3)
+  for(i in 2:nrow(DF)){
+    setTxtProgressBar(pb, i)
+    xyz <- cbind(locations$X, locations$Y, DF[i,])
+    rn <- rasterFromXYZ(xyz, crs = origcrs)
+    rn <- projectRaster(rn, crs = outcrs)
+    k <- as.matrix(rn)
+    k <- t(k)
+    arr[,,i] <- k
+  }
+  close(pb)
+  
+  print('Writing file')
+  #netcdf creation
+  londim <- ncdim_def("lon", "degrees_east", as.double(unique(coordinates(rstack)[,1]))) 
+  latdim <- ncdim_def("lat", "degrees_north", as.double(unique(coordinates(rstack)[,2]))) 
+  timedim <- ncdim_def( "Time", paste0("days since ",inidate), 1:dim(arr)[3], unlim = TRUE)
+  
+  fillvalue <- 1e32
+  tmp_def <- ncvar_def(varname, units = varunit, list(londim, latdim, timedim), 
+                       fillvalue, longname, prec = "single",
+                       compression = 9)
+  
+  #file structure creation and input data
+  ncout <- nc_create(filename = out, vars = list(tmp_def), force_v4 = TRUE)
+  
+  # assignment of the variables
+  ncvar_put(ncout, tmp_def, arr) 
+  
+  # assignment of the additional attributes
+  ncatt_put(ncout, "lon", "axis", "X")
+  ncatt_put(ncout, "lat", "axis", "Y")
+  ncatt_put(ncout, "Time", "axis", "T")
+  
+  # assignment of the global attributes
+  ncatt_put(ncout,0,'title', title)
+  ncatt_put(ncout,0,'history', history)
+  ncatt_put(ncout,0,'keywords', keywords)
+  ncatt_put(ncout,0,'creator_name', creator_name)
+  ncatt_put(ncout,0,'maintainer_name', maintainer_name)
+  ncatt_put(ncout,0,'maintainer_email', maintainer_email)
+  ncatt_put(ncout,0,"institution",institution)
+  ncatt_put(ncout,0,"processing_level",processing_level)
+  ncatt_put(ncout,0,"acknowledgment",acknowledgment)
+  ncatt_put(ncout,0,"units",units)
+  ncatt_put(ncout,0,"id",id)
+  ncatt_put(ncout,0,'sources',sources)
+  ncatt_put(ncout,0,'naming_authority',naming_authority)
+  
+  #close the file
+  nc_close(ncout)
+  
+}
